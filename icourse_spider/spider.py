@@ -11,14 +11,12 @@ def auto_retry_get(*args, **kwargs):
     while True:
         try:
             return old_requests_get(*args, **kwargs)
-        except requests.exceptions.SSLError as e:
+        except:
             try_cnt += 1
-            if try_cnt > 3:
-                raise e
-            print()
-            print(f'[WARN] requests.exceptions.SSLError! requests.get(): retrying {try_cnt}... {e}')
-            print(f'       {e}')
-            time.sleep(10)
+            print(f"{args[0]} Retry {try_cnt}")
+            if try_cnt > 10:
+                print(f"{args[0]} Failed")
+                return None
 requests.get = auto_retry_get
 
 
@@ -49,8 +47,8 @@ def mp_get_all_courses(x):
 def get_lesson_data(lessonid):
     url = f'https://icourse.club/course/{lessonid}/'
     r = requests.get(url)
-    if r.status_code != 200:
-        return None
+    if (r == None) or (r.status_code != 200):
+        return lessonid, None, None, '课程评分获取失败'
     # 寻找课程名，形如 <span class="blue h3">大学物理-研究性实验</span><span class="h3 blue mobile">
     name = re.findall(r'<span class="blue h3">(.+)</span><span class="h3 blue mobile">', r.text)
     if len(name) == 0:

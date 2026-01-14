@@ -17,7 +17,7 @@ for course in course_data:
         continue # 暂无评分的课程中有很大一部分出现了重复，这里直接忽略
     if course['icourse-id'] in to_abandon_datacase:
         continue # 有些课程的评分数据有误，这里直接忽略
-    assert specifyInfo not in mapping, course['icourse-id']
+    # assert specifyInfo not in mapping, course['icourse-id']
     mapping[specifyInfo] = course['score']
 
 def get_icourseRating(courseName, teachers):

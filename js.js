@@ -91,7 +91,7 @@ table.on("tool(courseList)",function(obj){
 initSettings();
 
 function rendersettingTable(){
-    let title = ["将叠一门视为不叠课(填入0或1)", "最大叠课数量(填入0~2)", "最大化总选课倾向度", "尽量不叠课", "同半天不往返东西区的方案优先", "不往返本部和高新区的方案优先", "避免单天四个或五个时段有课优先", "空出整个半天优先"];
+    let title = ["将叠一门视为不叠课(填入0或1)", "最大叠课数量(填入0~4)", "最大化总选课倾向度", "尽量不叠课", "同半天不往返东西区的方案优先", "不往返本部和高新区的方案优先", "避免单天四个或五个时段有课优先", "空出整个半天优先"];
     let initval = [preference.noConflict1, preference.noConflict2, preference.normalOption, preference.noConflict, preference.noMove1, preference.noMove2, preference.noManyClasses, preference.emptyHalf]
     let data = title.map((item, index) => ({
         id: index + 1,
@@ -122,7 +122,7 @@ function initSettings(){
             preference.noConflict1 = number;
         }
         if(id==1){
-            if(number>2)number=2;
+            if(number>4)number=4;
             preference.noConflict2 = number;
         }
         if(id==2)preference.normalOption = number;
@@ -185,9 +185,10 @@ table.render({ //初始化渲染课堂列表
     cols:[[
         {type:"checkbox"},
         {field:"code",title:"课堂编号",width:120},
-        {field:"courseName",title:"课程名称",width:170},
+        {field:"courseName",title:"课程名称",width:120},
         {field:"teacher",title:"授课教师",width:120},
-        {field:"placeDayTime",title:"时间地点",minWidth:160},
+        {field:"placeDayTime",title:"时间地点",minWidth:140},
+        {field:"volume",title:"<span id='vol' onmouseover='showTip(\"当前选中的人数，主要用于在选课开始前判断哪些班可以换班，非实时更新\",\"#vol\")' onmouseout='closeTip()'>容量<i class='layui-icon layui-icon-question' style='color:DodgerBlue;'></i></span>",width:90},
         {field:"icourseRating",title:"<span id='icourseRating' onmouseover='showTip(\"数据来源于评课社区https://icourse.club/，评分越高则同学们一般对该课堂越满意\",\"#icourseRating\")' onmouseout='closeTip()'>评分<i class='layui-icon layui-icon-question' style='color:DodgerBlue;'></i></span>",width:75,align:"center"},
         {field:"tendency",title:"<span id='tendency' onmouseover='showTip(\"倾向度越大则越优先，建议输入1~5的整数\",\"#tendency\")' onmouseout='closeTip()'>倾向度<i class='layui-icon layui-icon-question' style='color:DodgerBlue;'></i></span>",edit:"text",width:90,align:"center",style:"border:1px solid #AAAAAA;margin:2px;height:34px;padding:3px;"}
     ]],
@@ -343,7 +344,7 @@ function schedule(){ //开始排课
     setTimeout(function(){ //不知道为什么，不这么写就没法及时加载layer.load
         solution=[]; //排课方案，以冲突对数为第一关键字、满意度为第二关键字排序
         lessons=[]; //当前选定的课
-        dfs(0,0,0,0);
+        dfs(0,0,0);
         if(solution.length==0){
             layer.close(index);
             layer.alert("选课过多，无法使所有课程排入课表",{title:false,closeBtn:0,icon:2});
@@ -372,7 +373,25 @@ function mapLocation(str){
     return -1;
   }
 
-function dfs(i,tongshiCnt,conflictCnt,satisfaction){
+var deg = new Array();
+function dfs(i,tongshiCnt,satisfaction){
+    var conflictCnt=0,mx=0;
+    for(var j=0;j<i;++j)deg[j]=0;
+    for(var j=0;j<i;++j)
+        for(var k=0;k<j;++k)
+            if(lessons[j].timeType0&lessons[k].timeType0){
+                deg[j]++;deg[k]++;conflictCnt=1;
+                break;
+            }
+    if(conflictCnt){
+        for(var j=1;j<i;++j)if(deg[j]>deg[mx])mx=j;
+        for(var j=0;j<i;++j)
+            for(var k=0;k<j;++k)
+                if(j!=mx&&k!=mx&&(lessons[j].timeType0&lessons[k].timeType0)){
+                    conflictCnt++;
+                    if(conflictCnt>1&&conflictCnt>preference.noConflict2)return;
+                }
+    }
     if(i==course.length){
         satisfaction*=Math.pow(4,preference.normalOption-5);
         if(preference.noConflict1==1&&conflictCnt==1)conflictCnt=0;
@@ -438,14 +457,10 @@ function dfs(i,tongshiCnt,conflictCnt,satisfaction){
     }
     for(var j in course[i].lessons){
         var lesson=course[i].lessons[j];
-        if(tongshiCnt+lesson.tongshi>tongshiThreshold)dfs(i+1,tongshiCnt,conflictCnt+conflict,satisfaction+lesson.tendency); //通识课过多
+        if(tongshiCnt+lesson.tongshi>tongshiThreshold)dfs(i+1,tongshiCnt,satisfaction+lesson.tendency); //通识课过多
         else{
-            var conflict=0;
-            for(var k in lessons)
-                if((lessons[k].weekType & lesson.weekType) && ((lessons[k].timeType0 & lesson.timeType0) || (lessons[k].timeType1 & lesson.timeType1))) ++conflict;
-            if(conflictCnt+conflict>=3)continue;
             lessons.push(lesson);
-            dfs(i+1,tongshiCnt+lesson.tongshi,conflictCnt+conflict,satisfaction+lesson.tendency);
+            dfs(i+1,tongshiCnt+lesson.tongshi,satisfaction+lesson.tendency);
             lessons.pop();
         }
     }

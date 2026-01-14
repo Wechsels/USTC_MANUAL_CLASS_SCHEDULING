@@ -139,6 +139,7 @@ for i in df.index:
         'timeType0': time & ((1 << 30) - 1),
         'placeDayTime': plwt,
         'credit': df['学分'][i],
+        'volume': f"{df['选课人数'][i]}/{df['限选人数'][i]}"
     }
     if time >> 30:
         sim_course['timeType1'] = time >> 30
