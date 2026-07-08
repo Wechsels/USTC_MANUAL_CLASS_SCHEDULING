@@ -1,20 +1,49 @@
-# 蜗壳排课工具
+# USTC Course Scheduling Tool
 
-运行`data_generator.py`（`class.xlsx`从 https://catalog.ustc.edu.cn/query/lesson 下方的“下载当前结果为 Excel”下载）以生成`data.js`。
+USTC Course Scheduling Tool is a static web app for planning course timetables. It helps students search courses, choose preferred sections, adjust scheduling preferences, and generate timetable plans directly in the browser.
+
+This project is part of Woke 365, a Gold Award winner at USTC's Yuqing Cup Campus Software Design Competition.
+
+## Tech Stack
+
+- HTML, CSS, JavaScript
+- jQuery
+- Layui
+- Python
+
+## Directory Structure
+
+```text
+.
+├── index.html              # Page entry
+├── js.js                   # Main business logic and scheduling algorithm
+├── table.css               # Page and timetable styles
+├── data.js                 # Generated course data
+├── data_generator.py       # Generates data.js from class.xlsx
+├── class.xlsx              # Course data exported from the academic system
+├── icourse_spider/         # Course rating crawler and matcher
+├── layui/                  # Layui dependency
+├── jquery.js               # jQuery dependency
+├── filesaver.js            # File export dependency
+├── README.md
+└── LICENSE
+```
+
+## Quick Start
+
+This project is a static site with no build step. You can open `index.html` directly, or start a local static server from the project root:
+
+```bash
+python -m http.server 8000
+```
+
+Then visit `http://localhost:8000/`.
+
+For the development guide, see [开发说明.md](./开发说明.md).
 
 ## Contributors
 
-孙旭磊、Brealid、Determinant
-
-## To Do
-
-| 分类 | 事项 |
-|:-:|:-:|
-| 排课逻辑 | 增加“课程组”的功能，课程组内的课程互斥（方便选择替代课程） |
-| 用户数据 | 导入培养方案课程列表 |
-| 用户数据 | 某门已选课程的信息有修改时提醒用户 |
-| 数据同步 | 课程数据从公共查询【自动】同步 |
-| 功能拓展 | 给出换班方案 |
+Xulei Sun, Brealid, Determinant
 
 ## License
 
