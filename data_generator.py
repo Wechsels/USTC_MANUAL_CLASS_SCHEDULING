@@ -171,6 +171,110 @@ def dealWeek(info):
     result >>= 1
     return result
 
+def extract_locations(info):
+    """
+    从时间地点字段提取所有地点标识，复用 clean_time_place 的规整逻辑。
+    规整后地点是以 ':' 结尾的独立 token（如 "2409:"、"TH-C101:"、"管理楼三楼机房:"），
+    去掉末尾冒号即为地点名。dealTime 用同样的方式识别地点，保持一致。
+    """
+    cleaned = clean_time_place(info)
+    if not cleaned:
+        return []
+    locs = []
+    for tok in re.split(r'[\x00-\x20]', cleaned):
+        tok = str(tok)
+        if len(tok) > 1 and tok.endswith(':'):
+            locs.append(tok[:-1])
+    return locs
+
+def merge_continuation_rows(df):
+    """
+    把 code=NaN 的延续行合并到正确的主行。
+
+    新格式中，同一课堂的不同时段可能拆成多行。延续行只有 timePlace 有值，
+    其余元数据列（code, courseName, teacher 等）均为 NaN。延续行的 timePlace
+    末尾会附带该时段的授课教师姓名。
+
+    匹配策略：先用 (教师, 地点) 全局索引定位主行，回退到前一个主行。
+    简单 ffill 会把延续行错配给相邻的前一行主行——当某个课堂的主行在文件
+    后段、而延续行散在前段时（新教务导出常见），就会把别课堂的时段并进来。
+    元数据也只从主行取（按 code 映射），不用位置 ffill，避免延续行继承相邻
+    别课堂的 courseName/teacher。
+    """
+    code = 'code'
+    teacher = 'teacher'
+    time_place = 'timePlace'
+    meta_cols = ('courseName', 'teacher', 'credit', 'selected', 'capacity', 'classType')
+
+    is_main = df[code].notna()  # 原始主行标记（赋值 code 前先记录）
+
+    # 构建 (教师, 地点) -> code 全局索引（只看主行）
+    tl_map = {}
+    main_rows = df[is_main]
+    for _, r in main_rows.iterrows():
+        locs = extract_locations(r[time_place])
+        tlist = [t.strip() for t in str(r[teacher]).split(',')] if pd.notna(r[teacher]) else []
+        for t in tlist:
+            for loc in locs:
+                tl_map[(t, loc)] = r[code]
+
+    # 为每个 NaN code 行分配正确的课堂号
+    assigned = df[code].copy()
+    for i in range(len(df)):
+        if pd.notna(assigned.iloc[i]):
+            continue
+        tv = str(df.iloc[i][time_place])
+        # 提取教师名（最后一个 ')' 之后的部分）
+        lp = tv.rfind(')')
+        time_teacher = tv[lp + 1:].strip() if lp != -1 and lp + 1 < len(tv) else None
+        locs = extract_locations(tv)
+
+        # 策略1: (教师, 地点) 精确匹配
+        found_code = None
+        if time_teacher and locs:
+            for loc in locs:
+                if (time_teacher, loc) in tl_map:
+                    found_code = tl_map[(time_teacher, loc)]
+                    break
+
+        # 策略2: 回退到前一个已分配的 code
+        if not found_code:
+            for j in range(i - 1, -1, -1):
+                if pd.notna(assigned.iloc[j]):
+                    found_code = assigned.iloc[j]
+                    break
+
+        if found_code:
+            assigned.iloc[i] = found_code
+
+    # 丢弃仍然没有 code 的行（文件开头的孤行）
+    valid_mask = assigned.notna()
+    df = df[valid_mask].copy()
+    df[code] = assigned[valid_mask].values
+    is_main = is_main[valid_mask].values
+
+    # 元数据只从主行取：构建 code -> 主行元数据 映射，再回填到所有同 code 行。
+    # 这样延续行不会因位置相邻而继承别课堂的 courseName/teacher。
+    meta_lookup = {}
+    for _, r in df[is_main].iterrows():
+        meta_lookup[r[code]] = {col: r[col] for col in meta_cols}
+    for col in meta_cols:
+        df[col] = df[code].map(lambda c: meta_lookup.get(c, {}).get(col))
+
+    # 按课堂号分组合并
+    grouped = df.groupby(code, sort=False).agg({
+        'courseName': 'first',
+        'teacher': 'first',
+        'credit': 'first',
+        'selected': 'first',
+        'capacity': 'first',
+        'classType': 'first',
+        'timePlace': lambda s: '\n'.join(str(v) for v in s if pd.notna(v) and str(v).strip()),
+    }).reset_index()
+
+    return grouped
+
+
 # 可选加载评课社区评分
 try:
     from icourse_spider import lesson_match
@@ -187,23 +291,7 @@ for xlsx in xlsx_files:
     df = unify_columns(df)
     semester = extract_semester(os.path.basename(xlsx))
 
-    # 新格式把同一课堂的不同时段拆成多行（仅日期时间地点人员列有值，其余为空）。
-    # 按课堂号向前填充元数据，再分组合并时段，还原成旧格式那种单行多时段结构。
-    df['code'] = df['code'].ffill()
-    df = df.dropna(subset=['code'])
-    for col in ('courseName', 'teacher', 'credit', 'selected', 'capacity', 'classType'):
-        df[col] = df[col].ffill()
-
-    # 按课堂号合并所有时段字符串，用换行分隔（dealTime/dealWeek 已按换行/空白拆分）
-    grouped = df.groupby('code', sort=False).agg({
-        'courseName': 'first',
-        'teacher': 'first',
-        'credit': 'first',
-        'selected': 'first',
-        'capacity': 'first',
-        'classType': 'first',
-        'timePlace': lambda s: '\n'.join(str(v) for v in s if pd.notna(v) and str(v).strip()),
-    }).reset_index()
+    grouped = merge_continuation_rows(df)
 
     for i in grouped.index:
         tm = clean_time_place(grouped['timePlace'][i])
