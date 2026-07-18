@@ -633,5 +633,6 @@ function addActivity($td,activity,first){
         '<p class="teacher">'+activity.teacher+'</p>'+
         '<p class="units">'+activity.unitsStr+'</p>'+
         '<p class="units">'+getStartEndWeekStr(activity.weekType)+'</p>'+
+        '<p class="credit">'+activity.credit+' 学分</p>'+
         '<p class="place"><span class="name">'+activity.place+'</span></p></div>');
 }
