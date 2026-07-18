@@ -11,3 +11,4 @@ _*.txt
 dist/
 build/
 *.egg-info/
+*.xlsx

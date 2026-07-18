@@ -187,6 +187,19 @@ def extract_locations(info):
             locs.append(tok[:-1])
     return locs
 
+def _extract_day_set(info):
+    """Extract set of day-of-week numbers (1-7) from a timePlace string."""
+    cleaned = clean_time_place(info)
+    if not cleaned:
+        return set()
+    days = set()
+    for tok in re.split(r'[\x00-\x20]', cleaned):
+        tok = str(tok)
+        if tok[0:1].isdigit() and tok.endswith(')') and '(' in tok:
+            days.add(int(tok[0]))
+    return days
+
+
 def merge_continuation_rows(df):
     """
     把 code=NaN 的延续行合并到正确的主行。
@@ -247,12 +260,32 @@ def merge_continuation_rows(df):
             if len(seen_codes) == 1:
                 found_code = next(iter(seen_codes))
             elif len(seen_codes) > 1:
-                # 多课堂共享：取当前位置之前、行号最大的主行
-                prior = [(max(idx_list), mcode)
-                         for mcode, idx_list in seen_codes.items()
-                         if min(idx_list) < i]
-                if prior:
-                    found_code = max(prior, key=lambda x: x[0])[1]
+                # 多课堂共享：先用延续行的星期数与各主行对比，
+                # 只保留星期有交集的候选——同课程不同班共享(教师, 地点)但分占不同星期
+                cont_days = _extract_day_set(tv)
+                if cont_days:
+                    filtered = {}
+                    for mcode, idx_list in seen_codes.items():
+                        mrow = df.loc[idx_list[0]][time_place]
+                        main_days = _extract_day_set(mrow)
+                        if cont_days & main_days:
+                            filtered[mcode] = idx_list
+                    if len(filtered) == 1:
+                        found_code = next(iter(filtered))
+                    elif len(filtered) > 1:
+                        prior = [(max(idx_list), mcode)
+                                 for mcode, idx_list in filtered.items()
+                                 if min(idx_list) < i]
+                        if prior:
+                            found_code = max(prior, key=lambda x: x[0])[1]
+
+                # 星期无法区分（或为空），回退到最近的前一个主行
+                if not found_code:
+                    prior = [(max(idx_list), mcode)
+                             for mcode, idx_list in seen_codes.items()
+                             if min(idx_list) < i]
+                    if prior:
+                        found_code = max(prior, key=lambda x: x[0])[1]
 
         # 策略2: 回退到前一个已分配的 code
         if not found_code:
