@@ -208,15 +208,18 @@ def merge_continuation_rows(df):
 
     is_main = df[code].notna()  # 原始主行标记（赋值 code 前先记录）
 
-    # 构建 (教师, 地点) -> code 全局索引（只看主行）
+    # 构建 (教师, 地点) -> [(row_idx, code), ...] 全局索引（只看主行）。
+    # 同一 (教师, 地点) 可能被多个课堂共享（同课程的不同小班，教师和教室相同、
+    # 只是上课节次不同），所以保留全部候选，匹配时再就近选。
     tl_map = {}
-    main_rows = df[is_main]
-    for _, r in main_rows.iterrows():
+    main_idx = df.index[is_main]
+    for i in main_idx:
+        r = df.loc[i]
         locs = extract_locations(r[time_place])
         tlist = [t.strip() for t in str(r[teacher]).split(',')] if pd.notna(r[teacher]) else []
         for t in tlist:
             for loc in locs:
-                tl_map[(t, loc)] = r[code]
+                tl_map.setdefault((t, loc), []).append((i, r[code]))
 
     # 为每个 NaN code 行分配正确的课堂号
     assigned = df[code].copy()
@@ -229,13 +232,27 @@ def merge_continuation_rows(df):
         time_teacher = tv[lp + 1:].strip() if lp != -1 and lp + 1 < len(tv) else None
         locs = extract_locations(tv)
 
-        # 策略1: (教师, 地点) 精确匹配
+        # 策略1: (教师, 地点) 匹配。
+        # - 若该 (教师, 地点) 只被一个课堂拥有（唯一匹配），直接取它——即使主行
+        #   在文件后段（如 MSEN6406P.01 的延续行散在前段、主行在后段）。
+        # - 若被多个课堂共享（同课程不同小班，教师/教室相同仅节次不同），取离当前
+        #   行最近的前一个主行——延续行通常紧跟主行，就近能正确区分小班。
         found_code = None
         if time_teacher and locs:
+            # 汇总所有 loc 下的候选主行
+            seen_codes = {}
             for loc in locs:
-                if (time_teacher, loc) in tl_map:
-                    found_code = tl_map[(time_teacher, loc)]
-                    break
+                for (midx, mcode) in tl_map.get((time_teacher, loc), []):
+                    seen_codes.setdefault(mcode, []).append(midx)
+            if len(seen_codes) == 1:
+                found_code = next(iter(seen_codes))
+            elif len(seen_codes) > 1:
+                # 多课堂共享：取当前位置之前、行号最大的主行
+                prior = [(max(idx_list), mcode)
+                         for mcode, idx_list in seen_codes.items()
+                         if min(idx_list) < i]
+                if prior:
+                    found_code = max(prior, key=lambda x: x[0])[1]
 
         # 策略2: 回退到前一个已分配的 code
         if not found_code:
