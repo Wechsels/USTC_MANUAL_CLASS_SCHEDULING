@@ -258,7 +258,17 @@ def merge_continuation_rows(df):
                 for (midx, mcode) in tl_map.get((time_teacher, loc), []):
                     seen_codes.setdefault(mcode, []).append(midx)
             if len(seen_codes) == 1:
-                found_code = next(iter(seen_codes))
+                # 唯一匹配：验证延续行星期是否与主行有交集。
+                # 不同文件的课程可能共享(教师, 地点)但星期不同，不匹配应丢弃。
+                cont_days = _extract_day_set(tv)
+                if cont_days:
+                    mcode = next(iter(seen_codes))
+                    mrow = df.loc[seen_codes[mcode][0]][time_place]
+                    main_days = _extract_day_set(mrow)
+                    if not (cont_days & main_days):
+                        found_code = None  # 跨文件同教室不同课程，丢弃
+                if found_code is None and not cont_days:
+                    found_code = next(iter(seen_codes))
             elif len(seen_codes) > 1:
                 # 多课堂共享：先用延续行的星期数与各主行对比，
                 # 只保留星期有交集的候选——同课程不同班共享(教师, 地点)但分占不同星期
